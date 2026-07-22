@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LIAS 10日ごと仕入ダッシュボード</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#F4F5F7; --surface:#FFFFFF; --ink:#17171A; --ink2:#5B5B63; --faint:#96969E;
+    --line:#E6E7EA; --rule:#D3D5DA;
+    --yellow:#FFD400; --yellow-soft:#FFF3C2; --yellow-pale:#FFFBEB;
+    --black:#17171A; --side:#1B1B1F;
+    --rust:#E0452C; --zebra:#FAFAFB;
+    --sans:"Noto Sans JP","Hiragino Kaku Gothic ProN","Yu Gothic",Meiryo,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; }
+  html{ -webkit-text-size-adjust:100%; }
+  body { font-family:var(--sans); background:var(--bg); color:var(--ink); line-height:1.6; font-size:14px; }
+  ::selection{ background:var(--yellow); color:var(--black); }
+  input,select,button{ font-family:var(--sans); }
+  .num{ font-variant-numeric:tabular-nums; }
+
+  /* ===== app shell ===== */
+  .app{ display:flex; min-height:100vh; align-items:stretch; }
+  .side{ width:236px; flex:0 0 236px; background:var(--side); color:#fff; padding:22px 16px; position:sticky; top:0; height:100vh; display:flex; flex-direction:column; gap:22px; }
+  .brand{ display:flex; align-items:center; gap:11px; padding:0 6px; }
+  .mark{ width:38px; height:38px; border-radius:11px; background:var(--yellow); color:var(--black); font-weight:900; font-size:20px; display:flex; align-items:center; justify-content:center; }
+  .bname{ font-size:17px; font-weight:900; letter-spacing:.08em; }
+  .bsub{ font-size:11px; color:#9A9AA2; font-weight:500; }
+
+  .tabs{ display:flex; flex-direction:column; gap:4px; }
+  .tab{ display:flex; align-items:center; gap:10px; width:100%; text-align:left; padding:12px 14px; font-size:14px; font-weight:700; color:#B9B9C0; background:transparent; border:none; border-radius:11px; cursor:pointer; transition:.12s; }
+  .tab .ti{ font-size:10px; font-weight:700; color:#6A6A73; letter-spacing:.08em; }
+  .tab:hover{ background:#26262B; color:#fff; }
+  .tab.active{ background:var(--yellow); color:var(--black); }
+  .tab.active .ti{ color:rgba(0,0,0,.45); }
+
+  .sideact{ margin-top:auto; }
+  .btn { width:100%; background:var(--yellow); color:var(--black); border:none; padding:14px 20px; font-size:15px; font-weight:900; border-radius:12px; cursor:pointer; transition:.12s; }
+  .btn:hover { filter:brightness(1.06); }
+  .sidenote{ font-size:10.5px; color:#7C7C85; line-height:1.8; border-top:1px solid #2C2C32; padding-top:14px; }
+
+  .main{ flex:1; min-width:0; padding:26px 30px 70px; }
+  @media (max-width:900px){
+    .app{ flex-direction:column; }
+    .side{ width:auto; flex:none; height:auto; position:static; flex-direction:row; align-items:center; flex-wrap:wrap; gap:14px; padding:14px 16px; }
+    .tabs{ flex-direction:row; flex:1; overflow-x:auto; }
+    .tab{ white-space:nowrap; }
+    .tab .ti{ display:none; }
+    .sideact{ margin-top:0; width:auto; }
+    .btn{ width:auto; padding:11px 18px; font-size:14px; }
+    .sidenote{ display:none; }
+    .main{ padding:18px 16px 60px; }
+  }
+
+  /* ===== topbar ===== */
+  .topbar{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:22px; }
+  h1 { font-size:27px; line-height:1.3; font-weight:900; color:var(--black); letter-spacing:-.01em; }
+  h1 .slash{ color:var(--yellow); }
+  .sub { font-size:13px; color:var(--ink2); max-width:56ch; font-weight:500; margin-top:3px; }
+
+  #ticker{ background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:8px 10px; display:flex; flex-wrap:wrap; align-items:center; gap:7px; }
+  #ticker .tk-label{ background:var(--black); color:#fff; padding:7px 13px; border-radius:999px; font-size:11px; font-weight:900; }
+  #ticker .tk{ padding:7px 13px; border-radius:999px; background:#F4F4F6; font-size:14px; font-weight:700; color:var(--black); display:flex; align-items:center; gap:9px; }
+  #ticker .tk .pair{ color:var(--ink2); font-size:11px; font-weight:700; }
+  #ticker .tk .val{ color:var(--black); font-weight:900; font-size:16px; }
+  #ticker .tk .na{ color:var(--faint); font-weight:500; font-size:12px; }
+
+  .notice { font-size:14px; padding:13px 18px; border-radius:12px; background:var(--yellow-soft); color:var(--black); margin-bottom:18px; font-weight:700; }
+
+  /* ===== KPI ===== */
+  .cards { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; }
+  .card { background:var(--surface); border:1px solid var(--line); border-radius:16px; padding:15px 17px 16px; transition:.12s; }
+  .card:hover{ border-color:var(--black); }
+  .card .l { display:block; color:var(--ink2); font-size:11.5px; font-weight:700; }
+  .card .v { display:block; font-size:26px; font-weight:900; padding-top:4px; color:var(--black); letter-spacing:-.01em; }
+  .card .v.warn { color:var(--rust); }
+  @media (max-width:640px){ .cards{ grid-template-columns:repeat(2,1fr);} h1{font-size:22px;} }
+
+  /* ===== panels & tables ===== */
+  .panel { background:var(--surface); border:1px solid var(--line); border-radius:16px; margin-top:16px; overflow:hidden; }
+  .scroll { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { padding:13px 14px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--line); border-right:1px solid var(--line); }
+  th:last-child,td:last-child{ border-right:0; }
+  thead tr { background:var(--yellow); }
+  thead th{ font-size:12.5px; color:var(--black); font-weight:900; border-color:rgba(0,0,0,.12); text-align:center; }
+  thead th.sticky{ text-align:left; }
+  th.r,td.r { text-align:right; }
+  tbody tr:nth-child(even) { background:var(--zebra); }
+  tbody tr:hover { background:var(--yellow-pale); }
+  .pname { font-weight:700; color:var(--black); font-size:14px; }
+  .pmeta { font-size:12px; color:var(--ink2); margin-top:2px; }
+  .code { color:var(--black); background:var(--yellow-soft); padding:1px 7px; border-radius:5px; margin-right:6px; font-weight:700; font-size:11px; }
+  td.num,.mincell,.card .v{ font-variant-numeric:tabular-nums; }
+  td.num{ font-size:15px; font-weight:700; }
+  .dim { color:var(--faint); font-weight:400; }
+  .bold { font-weight:900; }
+  tfoot tr { background:var(--black); }
+  tfoot td{ color:#fff; font-size:15px; font-weight:900; border-color:rgba(255,255,255,.15); }
+
+  .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; background:var(--zebra); border-bottom:1px solid var(--line); font-size:13px; color:var(--ink2); font-weight:500; }
+  .bar.amber { background:var(--yellow-pale); color:#7A5A00; }
+  .btn-o { background:var(--surface); color:var(--black); border:2px solid var(--black); padding:8px 16px; font-size:13px; font-weight:700; border-radius:999px; cursor:pointer; transition:.12s; }
+  .btn-o:hover { background:var(--black); color:#fff; }
+  .empty { text-align:center; color:var(--ink2); font-size:14px; padding:44px 0; font-weight:500; }
+  .foot { margin-top:22px; font-size:11.5px; color:var(--ink2); line-height:1.9; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px 20px; }
+  .cl { display:inline-block; margin-right:10px; white-space:nowrap; font-size:12px; color:var(--ink2); }
+  .cl b { color:var(--faint); font-weight:500; }
+
+  /* period chips */
+  .chips { display:flex; flex-wrap:wrap; gap:9px; margin-top:16px; }
+  .chip { padding:12px 22px; font-size:14px; font-weight:700; border:1px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink); cursor:pointer; transition:.12s; }
+  .chip:hover { border-color:var(--black); }
+  .chip.active { background:var(--black); color:#fff; border-color:var(--black); }
+  .chip small { opacity:.75; margin-left:6px; font-weight:500; }
+
+  /* price rows / expand */
+  .prow .sticky { cursor:pointer; }
+  .prow:hover .sticky { background:var(--yellow-pale); }
+  .prow.openrow .sticky { background:var(--yellow-soft); }
+  .bestbadge { display:inline-block; background:var(--yellow); color:var(--black); font-size:13px; padding:4px 14px; border-radius:999px; font-weight:900; }
+  .exprow > td { background:var(--zebra); padding:18px; }
+  .supgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(215px,1fr)); gap:12px; }
+  .supcard { background:var(--surface); border:1px solid var(--line); border-radius:14px; overflow:hidden; }
+  .supcard.best { border:2px solid var(--black); }
+  .supname { font-size:13px; font-weight:700; color:var(--ink2); background:#F4F4F6; padding:9px 13px; display:flex; align-items:center; gap:6px; }
+  .supcard.best .supname{ background:var(--yellow); color:var(--black); font-weight:900; }
+  .inrow { display:flex; align-items:center; gap:6px; padding:13px 13px 0; }
+  .cursym { color:var(--ink2); font-size:16px; width:16px; text-align:center; font-weight:900; }
+  .inrow .priceinput { flex:1; width:auto; }
+  .supcard .yenconv { margin:7px 13px 13px; text-align:right; font-size:13px; }
+
+  .pline { margin-top:6px; font-size:12px; color:var(--ink2); font-weight:500; }
+  .pline .best { color:var(--black); font-weight:900; background:var(--yellow-soft); padding:1px 8px; border-radius:5px; }
+  .pline .sep { margin:0 7px; color:var(--line); }
+  .pline .orig { color:var(--faint); margin-left:4px; }
+  .pline .norate { color:var(--rust); font-weight:700; }
+
+  .curtag { display:inline-block; border-radius:5px; background:#F4F4F6; color:var(--ink2); border:none; font-size:11px; padding:2px 8px; font-weight:700; }
+  .supcard.best .supname .curtag{ background:rgba(0,0,0,.12); color:var(--black); }
+  .yenconv { font-size:13px; color:var(--black); text-align:right; margin-top:2px; min-height:16px; font-weight:900; }
+  .yenconv .norate { color:var(--rust); }
+
+  /* inputs */
+  .fld,.sel,.priceinput,.catinput,.rateinput{ font-size:14px; border:1px solid var(--rule); background:var(--surface); color:var(--ink); border-radius:10px; padding:10px 13px; transition:.12s; font-weight:500; }
+  .fld:focus,.sel:focus,.priceinput:focus,.catinput:focus,.rateinput:focus{ outline:none; border-color:var(--black); }
+  .priceinput { width:110px; padding:9px 11px; text-align:right; font-variant-numeric:tabular-nums; font-weight:700; font-size:15px; }
+  .priceinput.bestcell { border-color:var(--black); background:var(--yellow-soft); color:var(--black); font-weight:900; }
+  .rateinput{ text-align:right; font-weight:700; font-size:15px; }
+  .catinput { width:100%; max-width:260px; }
+  .mincell b { color:var(--black); font-size:16px; font-weight:900; }
+
+  .catchips { display:flex; flex-wrap:wrap; gap:9px; }
+  .catchip { display:inline-flex; align-items:center; gap:10px; background:var(--surface); border:2px solid var(--black); color:var(--black); border-radius:999px; padding:8px 9px 8px 17px; font-size:14px; font-weight:700; }
+  .catchip .cnt { background:var(--yellow); color:var(--black); font-size:12px; padding:2px 10px; border-radius:999px; font-weight:900; }
+  .catchip .del { border:none; background:#F4F4F6; color:var(--ink2); width:24px; height:24px; border-radius:999px; cursor:pointer; font-size:15px; line-height:1; transition:.12s; }
+  .catchip .del:hover { background:var(--rust); color:#fff; }
+  .cathead td { background:var(--yellow-soft); color:var(--black); font-weight:900; font-size:14px; }
+  .subtot td { background:#F4F4F6; color:var(--black); font-weight:900; }
+  .cattag { display:inline-block; border-radius:5px; background:var(--yellow-soft); color:var(--black); font-size:11px; padding:2px 9px; margin-left:6px; vertical-align:middle; font-weight:700; }
+
+  #syncdot{ position:fixed; right:16px; bottom:16px; background:var(--black); color:#fff; font-size:12px; font-weight:700; padding:8px 16px; border-radius:999px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:60; }
+  #syncdot.on{ opacity:1; }
+  .sticky { position:sticky; left:0; background:var(--surface); }
+  tbody tr:nth-child(even) .sticky{ background:var(--zebra); }
+  .prow:hover .sticky{ background:var(--yellow-pale); }
+  .cathead .sticky { background:var(--yellow-soft); }
+  .subtot .sticky { background:#F4F4F6; }
+  thead .sticky { background:var(--yellow); }
+  tfoot .sticky { background:var(--black); }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="mark">L</div>
+      <div>
+        <div class="bname">LIAS</div>
+        <div class="bsub">仕入管理システム</div>
+      </div>
+    </div>
+    <nav class="tabs">
+      <button class="tab active" data-view="summary"><span class="ti">01</span>仕入サマリー</button>
+      <button class="tab" data-view="period"><span class="ti">02</span>期別リスト</button>
+      <button class="tab" data-view="classify"><span class="ti">03</span>商品分類</button>
+      <button class="tab" data-view="prices"><span class="ti">04</span>仕入先価格</button>
+    </nav>
+    <div class="sideact">
+      <button class="btn" id="uploadBtn">CSV読込</button>
+      <input type="file" id="file" accept=".csv" style="display:none">
+    </div>
+    <div class="sidenote">仕入期＝受注日ベースで上旬(1〜10日)・中旬(11〜20日)・下旬(21日〜末)に区分。送料・値引き行は自動除外。</div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <h1>10日ごと<span class="slash">／</span>仕入インデックス</h1>
+        <div class="sub">受注を自動仕分けし、仕入れが必要な個数と仕入先価格を円換算で確認します。</div>
+      </div>
+      <div id="ticker"></div>
+    </header>
+    <div id="notice"></div>
+    <div class="cards" id="cards"></div>
+    <datalist id="catlist"></datalist>
+    <div id="content"></div>
+    <div class="foot">金額は受注単価ベースの参考値です。分類名は「商品分類」で自由に作成でき、割り当ては品番＋商品名＋規格で紐づくのでCSVを入れ替えても維持されます。バックアップは各画面の「書き出し」から。</div>
+  </main>
+</div>
+<div id="syncdot">保存中…</div>
+
+<script>
+let ORDERS = [];
+let VIEW = "summary";
+let ACTIVE_PERIOD = null;
+
+// ------- 商品分類（ユーザー独自の分類） -------
+function normKey(s){ return (s||"").replace(/\s+/g,"").toLowerCase(); }
+function pkey(o){ return o.code ? "c#"+o.code : "n#"+normKey(o.name)+"#"+normKey(o.spec); }
+let CATS = {};        // { pkey: 分類名 }
+let CATNAMES = [];    // 分類名の一覧
+function saveCats(){ queueSync('cats'); }
+function saveCatNames(){ queueSync('catnames'); }
+function addCatName(name){
+  name=(name||"").trim();
+  if(name && !CATNAMES.includes(name)){ CATNAMES.push(name); saveCatNames(); }
+}
+function removeCatName(name){
+  CATNAMES = CATNAMES.filter(n=>n!==name);
+  for(const k of Object.keys(CATS)){ if(CATS[k]===name) delete CATS[k]; }
+  saveCatNames(); saveCats();
+}
+function updateCatlist(){
+  const set=new Set(CATNAMES);
+  Object.values(CATS).forEach(v=>{ if(v) set.add(v); });
+  const el=document.getElementById("catlist");
+  if(el) el.innerHTML=[...set].map(c=>'<option value="'+esc(c)+'">').join("");
+}
+function uniqueProducts(){
+  const m=new Map();
+  for(const o of ORDERS){ const k=pkey(o); if(!m.has(k)) m.set(k,{key:k,code:o.code,name:o.name,spec:o.spec,qty:0}); m.get(k).qty+=o.qty; }
+  return [...m.values()];
+}
+
+// ------- 仕入先価格（手入力の原価マスタ） -------
+function saveSuppliers(){ queueSync('suppliers'); }
+function savePrices(){ queueSync('prices'); }
+const CURR = { JPY:{sym:"¥"}, USD:{sym:"$"}, EUR:{sym:"€"}, GBP:{sym:"£"}, KRW:{sym:"₩"} };
+function saveSupCur(){ queueSync('suppliers'); }
+function saveRates(){ queueSync('rates'); }
+let SUPPLIERS = [];   // 仕入先名の一覧
+let PRICES = {};      // { pkey: { 仕入先名: 価格(その仕入先の通貨) } }
+let SUPCUR = {};      // { 仕入先名: 通貨コード }
+let RATES = {};       // { 通貨コード: 1通貨あたりの円 }（JPYは常に1）
+let PRICE_FILTER = "";
+let PRICE_ROWS = [];
+let EXPANDED = new Set();       // 展開中の商品キー
+function filledCount(key){ const rec=PRICES[key]; if(!rec) return 0; return SUPPLIERS.filter(s=>rec[s]!=null&&rec[s]!=="").length; }
+function bestSupplier(key){
+  const rec=PRICES[key]; if(!rec) return null;
+  let best=null, bv=null;
+  for(const s of SUPPLIERS){ const y=toYen(s,rec[s]); if(y!=null && (bv==null||y<bv)){ bv=y; best=s; } }
+  return best;
+}
+function curOf(sup){ return SUPCUR[sup]||"JPY"; }
+function rateOf(cur){ if(cur==="JPY") return 1; const r=RATES[cur]; return (r!=null&&r!=="")?Number(r):null; }
+function toYen(sup,val){ if(val==null||val==="") return null; const r=rateOf(curOf(sup)); return (r!=null)? Math.round(Number(val)*r) : null; }
+function addSupplier(name,cur){ name=(name||"").trim(); if(name && !SUPPLIERS.includes(name)){ SUPPLIERS.push(name); SUPCUR[name]=cur||"JPY"; saveSuppliers(); saveSupCur(); } }
+function removeSupplier(name){
+  SUPPLIERS=SUPPLIERS.filter(s=>s!==name);
+  delete SUPCUR[name];
+  for(const k of Object.keys(PRICES)){ if(PRICES[k]) delete PRICES[k][name]; }
+  saveSuppliers(); saveSupCur(); savePrices();
+}
+function minPrice(key){ // 円換算での最安
+  const rec=PRICES[key]; if(!rec) return null;
+  const yens=SUPPLIERS.map(s=>toYen(s,rec[s])).filter(v=>v!=null);
+  return yens.length? Math.min(...yens) : null;
+}
+function priceLineHtml(key){
+  const rec=PRICES[key]; if(!rec) return '';
+  const entries=SUPPLIERS.filter(s=>rec[s]!=null&&rec[s]!=="").map(s=>({s,y:toYen(s,rec[s]),c:curOf(s),v:rec[s]}));
+  if(!entries.length) return '';
+  const conv=entries.filter(e=>e.y!=null);
+  const mn=conv.length? Math.min(...conv.map(e=>e.y)) : null;
+  return '<div class="pline">仕入 '+entries.map(e=>{
+    const yenTxt = e.y!=null? '¥'+num(e.y) : '<span class="norate">レート未設定</span>';
+    const orig = e.c!=="JPY" ? '<span class="orig">'+CURR[e.c].sym+num(e.v)+'</span>' : '';
+    return '<span class="'+((e.y!=null&&e.y===mn)?'best':'')+'">'+esc(e.s)+' '+yenTxt+orig+'</span>';
+  }).join('<span class="sep">・</span>')+'</div>';
+}
+
+const yen = n => "¥" + (n||0).toLocaleString("ja-JP");
+const num = n => (n||0).toLocaleString("ja-JP");
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function getPeriod(dateStr){
+  if(!dateStr) return null;
+  const p = dateStr.split("-").map(v=>parseInt(v,10));
+  const y=p[0], m=p[1], d=p[2];
+  if(!y||!m||!d) return null;
+  const jun = d<=10?"上旬":d<=20?"中旬":"下旬";
+  const rs = d<=10?1:d<=20?11:21;
+  const re = d<=10?10:d<=20?20:new Date(y,m,0).getDate();
+  return { key:y+"-"+String(m).padStart(2,"0")+"-"+jun, sort:y*10000+m*100+rs, label:y+"年"+m+"月 "+jun, range:m+"/"+rs+"〜"+m+"/"+re };
+}
+
+function periodsList(){
+  const map = new Map();
+  for(const o of ORDERS){ const p=getPeriod(o.date); if(p&&!map.has(p.key)) map.set(p.key,p); }
+  return [...map.values()].sort((a,b)=>a.sort-b.sort);
+}
+
+function buildPivot(){
+  const prod = new Map();
+  for(const o of ORDERS){
+    const p=getPeriod(o.date); if(!p) continue;
+    const key=pkey(o);
+    if(!prod.has(key)) prod.set(key,{key:key,code:o.code,name:o.name,spec:o.spec,cat:CATS[key]||"",byPeriod:{},total:0});
+    const r=prod.get(key);
+    r.byPeriod[p.key]=(r.byPeriod[p.key]||0)+o.qty; r.total+=o.qty;
+  }
+  return [...prod.values()].sort((a,b)=>b.total-a.total);
+}
+
+function buildPeriodDetail(pk){
+  const items = ORDERS.filter(o=>{const p=getPeriod(o.date); return p&&p.key===pk;});
+  const prod = new Map();
+  for(const o of items){
+    const key=pkey(o);
+    if(!prod.has(key)) prod.set(key,{code:o.code,name:o.name,spec:o.spec,cat:CATS[key]||"",qty:0,amount:0,clinics:{}});
+    const r=prod.get(key); r.qty+=o.qty; r.amount+=o.qty*o.price; r.clinics[o.clinic]=(r.clinics[o.clinic]||0)+o.qty;
+  }
+  return [...prod.values()].sort((a,b)=>b.qty-a.qty);
+}
+
+function renderTicker(){
+  const el=document.getElementById("ticker"); if(!el) return;
+  const used=[...new Set(SUPPLIERS.map(curOf))].filter(c=>c!=="JPY");
+  const known=[...new Set(used.concat(Object.keys(RATES)))].filter(c=>c!=="JPY"&&CURR[c]);
+  let h='<span class="tk-label">為替 FX ／ 手動</span>';
+  if(known.length===0){
+    h+='<span class="tk"><span class="na">仕入先に通貨を設定するとレートを表示します</span></span>';
+  } else {
+    for(const c of known){
+      const r=rateOf(c);
+      const val = r!=null ? '<span class="val">'+r.toLocaleString("ja-JP")+'</span>' : '<span class="na">――</span>';
+      h+='<span class="tk"><span class="pair">'+c+'/JPY</span>'+val+'</span>';
+    }
+  }
+  el.innerHTML=h;
+}
+function renderCards(){
+  const totQty = ORDERS.reduce((s,o)=>s+o.qty,0);
+  const items = buildPivot().length;
+  const clinics = new Set(ORDERS.map(o=>o.clinic)).size;
+  const periods = periodsList().length;
+  const cards=[
+    {l:"品目数",v:num(items)+" 品目"},
+    {l:"総仕入数",v:num(totQty)+" 個"},
+    {l:"仕入期",v:periods+" 期"},
+    {l:"商品明細",v:num(ORDERS.length)+" 件"},
+    {l:"取引クリニック",v:num(clinics)+" 院"},
+  ];
+  document.getElementById("cards").innerHTML = cards.map(c=>
+    `<div class="card"><div class="l">${c.l}</div><div class="v">${c.v}</div></div>`).join("");
+}
+
+function catOrder(pivot){
+  const tot={};
+  for(const r of pivot){ const c=r.cat||"未分類"; tot[c]=(tot[c]||0)+r.total; }
+  return Object.keys(tot).sort((a,b)=>{
+    if(a==="未分類") return 1; if(b==="未分類") return -1; return tot[b]-tot[a];
+  });
+}
+function renderSummary(){
+  const periods=periodsList(), pivot=buildPivot();
+  const cats=catOrder(pivot);
+  const span=periods.length+2;
+  let h='<div class="panel"><div class="scroll"><table><thead><tr>';
+  h+='<th class="sticky">商品</th>';
+  for(const p of periods) h+=`<th class="r"><div>${p.label}</div><div class="pmeta">${p.range}</div></th>`;
+  h+='<th class="r">合計</th></tr></thead><tbody>';
+  for(const cat of cats){
+    const rows=pivot.filter(r=>(r.cat||"未分類")===cat);
+    h+='<tr class="cathead"><td class="sticky" colspan="'+span+'">'+esc(cat)+' <span class="pmeta">('+rows.length+'品目)</span></td></tr>';
+    for(const r of rows){
+      h+='<tr><td class="sticky"><div class="pname">'+esc(r.name)+'</div><div class="pmeta">'+(r.code?'<span class="code">'+esc(r.code)+'</span>':'')+esc(r.spec)+'</div>'+priceLineHtml(r.key)+'</td>';
+      for(const p of periods){ const v=r.byPeriod[p.key]; h+='<td class="r num">'+(v?num(v):'<span class="dim">–</span>')+'</td>'; }
+      h+='<td class="r num bold">'+num(r.total)+'</td></tr>';
+    }
+    h+='<tr class="subtot"><td class="sticky">小計</td>';
+    for(const p of periods) h+='<td class="r num">'+num(rows.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
+    h+='<td class="r num">'+num(rows.reduce((s,r)=>s+r.total,0))+'</td></tr>';
+  }
+  h+='</tbody><tfoot><tr><td class="sticky">総合計 ('+pivot.length+'品目)</td>';
+  for(const p of periods) h+='<td class="r num">'+num(pivot.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
+  h+='<td class="r num">'+num(pivot.reduce((s,r)=>s+r.total,0))+'</td></tr></tfoot></table></div></div>';
+  return h;
+}
+function catChipsHtml(){
+  if(CATNAMES.length===0) return '<div class="empty" style="padding:8px 0">まだ分類がありません。上の入力欄で作成してください。</div>';
+  const count={};
+  for(const v of Object.values(CATS)){ count[v]=(count[v]||0)+1; }
+  return CATNAMES.map(n=>'<span class="catchip">'+esc(n)+'<span class="cnt">'+(count[n]||0)+'</span><button class="del" data-cat="'+esc(n)+'" title="この分類を削除">×</button></span>').join("");
+}
+function bindCatChips(){
+  document.querySelectorAll(".catchip .del").forEach(b=>b.onclick=()=>{
+    const name=b.dataset.cat;
+    if(confirm("分類「"+name+"」を削除します。割り当て済みの商品は未分類に戻ります。よろしいですか？")){ removeCatName(name); render(); }
+  });
+}
+function renderClassify(){
+  const prods=uniqueProducts().sort((a,b)=>{
+    const ca=CATS[a.key]||"~", cb=CATS[b.key]||"~";
+    if(ca!==cb) return ca<cb?-1:1; return b.qty-a.qty;
+  });
+  let h='';
+  // 分類マスタ（自分で分類名を作る）
+  h+='<div class="panel" style="margin-bottom:16px"><div class="bar"><div>あなた独自の分類を作成し、下の一覧で各商品に割り当てます。</div><div style="white-space:nowrap"><button class="btn-o" id="catExport">分類を書き出し</button> <button class="btn-o" id="catImportBtn">分類を取り込み</button><input type="file" id="catImport" accept=".json" style="display:none"></div></div>';
+  h+='<div style="padding:12px 16px"><div style="display:flex;gap:8px;margin-bottom:12px"><input id="newcat" class="fld" placeholder="分類名を入力（例：定番在庫 / 都度発注 / 韓国便 / A社まとめ …）" style="flex:1"><button class="btn" id="addcat">分類を追加</button></div>';
+  h+='<div class="catchips" id="catchips">'+catChipsHtml()+'</div></div></div>';
+  // 商品への割り当て
+  h+='<div class="panel"><div class="scroll"><table><thead><tr><th>商品</th><th class="r">総仕入数</th><th>分類</th></tr></thead><tbody>';
+  for(const p of prods){
+    h+='<tr><td><div class="pname">'+esc(p.name)+'</div><div class="pmeta">'+(p.code?'<span class="code">'+esc(p.code)+'</span>':'')+esc(p.spec)+'</div></td>';
+    h+='<td class="r num bold">'+num(p.qty)+'</td>';
+    h+='<td><input class="catinput" data-key="'+esc(p.key)+'" list="catlist" value="'+esc(CATS[p.key]||"")+'" placeholder="未分類（分類名を選ぶか入力）"></td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  return h;
+}
+function exportCats(){
+  const payload={ names:CATNAMES, assign:CATS };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="商品分類.json"; a.click();
+}
+function importCats(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const obj=JSON.parse(r.result);
+    if(Array.isArray(obj.names)){ for(const n of obj.names) addCatName(n); }
+    if(obj.assign && typeof obj.assign==="object"){ Object.assign(CATS,obj.assign); }
+    else if(!obj.names && !obj.assign){ Object.assign(CATS,obj); } // 旧形式
+    for(const v of Object.values(CATS)) addCatName(v);
+    saveCats(); saveCatNames(); render(); setNotice("分類を取り込みました");
+  }catch(err){ setNotice("取り込み失敗: "+err.message); } };
+  r.readAsText(f); e.target.value="";
+}
+function supChipsHtml(){
+  if(SUPPLIERS.length===0) return '<div class="empty" style="padding:8px 0">仕入先がまだありません。上の入力欄で登録してください（例：4社）。</div>';
+  return SUPPLIERS.map(n=>{ const c=curOf(n); const tag=c!=="JPY"?'<span class="curtag">'+CURR[c].sym+' '+c+'</span>':'<span class="curtag jpy">¥ 円</span>'; return '<span class="catchip">'+esc(n)+tag+'<button class="del" data-sup="'+esc(n)+'" title="この仕入先を削除">×</button></span>'; }).join("");
+}
+function bindSupChips(){
+  document.querySelectorAll(".catchip .del[data-sup]").forEach(b=>b.onclick=()=>{
+    const name=b.dataset.sup;
+    if(confirm("仕入先「"+name+"」を削除します。入力済みの価格も消えます。よろしいですか？")){ removeSupplier(name); render(); }
+  });
+}
+function refreshPriceRow(i){
+  const key=PRICE_ROWS[i]; const mn=minPrice(key); const bs=bestSupplier(key);
+  document.querySelectorAll('.priceinput[data-row="'+i+'"]').forEach(inp=>{
+    const sup=inp.dataset.sup, v=inp.value.trim();
+    const y=toYen(sup, v===""?null:v);
+    const card=inp.closest('.supcard'); if(card) card.classList.toggle('best', mn!=null && y!=null && y===mn);
+    const conv=document.querySelector('.yenconv[data-row="'+i+'"][data-sup="'+cssq(sup)+'"]');
+    if(conv){ conv.innerHTML = (v==="")?"" : (y!=null? "≒¥"+num(y) : '<span class="norate">レート未設定</span>'); }
+  });
+  const cell=document.querySelector('.mincell[data-row="'+i+'"]');
+  if(cell) cell.innerHTML = mn!=null? '<b>'+yen(mn)+'</b>' : '<span class="dim">–</span>';
+  const bsc=document.querySelector('.bestsup[data-row="'+i+'"]');
+  if(bsc) bsc.innerHTML = bs? '<span class="bestbadge">'+esc(bs)+'</span>' : '<span class="dim">–</span>';
+  const fc=document.querySelector('.filled[data-row="'+i+'"]');
+  if(fc) fc.innerHTML = '<span class="'+(filledCount(key)?'':'dim')+'">'+filledCount(key)+'/'+SUPPLIERS.length+'</span>';
+}
+function cssq(s){ return String(s).replace(/"/g,'\\"'); }
+function renderPrices(){
+  PRICE_ROWS=[];
+  let prods=uniqueProducts();
+  if(PRICE_FILTER) prods=prods.filter(p=>(CATS[p.key]||"未分類")===PRICE_FILTER);
+  prods.sort((a,b)=>b.qty-a.qty);
+  const filterOpts=["全ての商品"].concat(CATNAMES).concat(["未分類"]);
+  const curOpts=Object.keys(CURR);
+  let h='';
+  // 仕入先マスタ
+  h+='<div class="panel" style="margin-bottom:16px"><div class="bar"><div>仕入先（原価の入力先）と通貨を登録します。価格は各通貨で入力し、円に換算して表示・比較します。</div><div style="white-space:nowrap"><button class="btn-o" id="priceExport">価格を書き出し</button> <button class="btn-o" id="priceImportBtn">価格を取り込み</button><input type="file" id="priceImport" accept=".json" style="display:none"></div></div>';
+  h+='<div style="padding:12px 16px"><div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap"><input id="newsup" class="fld" placeholder="仕入先名（例：A社 / 韓国◯◯ / △△商事）" style="flex:1;min-width:160px"><select id="newsupcur" class="sel">';
+  for(const c of curOpts) h+='<option value="'+c+'">'+CURR[c].sym+' '+c+'</option>';
+  h+='</select><button class="btn" id="addsup">仕入先を追加</button></div>';
+  h+='<div class="catchips" id="supchips">'+supChipsHtml()+'</div></div></div>';
+  if(SUPPLIERS.length===0) return h;
+  // 為替レート（手動入力）
+  const usedCurs=[...new Set(SUPPLIERS.map(curOf))].filter(c=>c!=="JPY");
+  if(usedCurs.length){
+    h+='<div class="panel" style="margin-bottom:16px"><div class="bar">為替レート（手動入力）</div><div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">';
+    for(const c of usedCurs){
+      h+='<div style="display:flex;align-items:center;gap:6px;font-size:14px"><span style="color:var(--ink2)">1 '+CURR[c].sym+' '+c+' =</span><input class="rateinput" data-cur="'+c+'" type="number" inputmode="decimal" value="'+esc(RATES[c]!=null?RATES[c]:"")+'" placeholder="?" style="width:110px"><span style="color:var(--ink2)">円</span></div>';
+    }
+    h+='<span class="dim" style="font-size:12px">※レートを変えると円換算・最安が更新されます</span></div></div>';
+  }
+  // フィルタ
+  h+='<div style="margin-bottom:10px;font-size:13px;color:var(--ink2)">分類でしぼり込み： <select id="pricefilter" class="sel">';
+  for(const o of filterOpts){ const val=(o==="全ての商品")?"":o; h+='<option value="'+esc(val)+'"'+(PRICE_FILTER===val?' selected':'')+'>'+esc(o)+'</option>'; }
+  h+='</select> <span class="dim">'+prods.length+'品目</span> <span class="dim">｜ 商品をタップで仕入先の価格を入力</span></div>';
+  // 一覧（コンパクト）＋展開エディタ
+  h+='<div class="panel"><div class="scroll"><table><thead><tr><th class="sticky">商品</th><th class="r">売価(参考)</th><th class="r">最安(円)</th><th>最安仕入先</th><th class="r">入力</th></tr></thead><tbody>';
+  for(const p of prods){
+    const i=PRICE_ROWS.length; PRICE_ROWS.push(p.key);
+    const rec=PRICES[p.key]||{}; const mn=minPrice(p.key); const bs=bestSupplier(p.key);
+    const open=EXPANDED.has(p.key);
+    let sale=null; for(const o of ORDERS){ if(pkey(o)===p.key) sale=o.price; }
+    h+='<tr class="prow'+(open?' openrow':'')+'" data-row="'+i+'" data-key="'+esc(p.key)+'"><td class="sticky"><div class="pname">'+(open?'▾ ':'▸ ')+esc(p.name)+'</div><div class="pmeta">'+(p.code?'<span class="code">'+esc(p.code)+'</span>':'')+esc(p.spec)+'</div></td>';
+    h+='<td class="r num dim">'+(sale?yen(sale):'–')+'</td>';
+    h+='<td class="r num mincell" data-row="'+i+'">'+(mn!=null?'<b>'+yen(mn)+'</b>':'<span class="dim">–</span>')+'</td>';
+    h+='<td class="bestsup" data-row="'+i+'">'+(bs?'<span class="bestbadge">'+esc(bs)+'</span>':'<span class="dim">–</span>')+'</td>';
+    h+='<td class="r filled" data-row="'+i+'"><span class="'+(filledCount(p.key)?'':'dim')+'">'+filledCount(p.key)+'/'+SUPPLIERS.length+'</span></td></tr>';
+    if(open){
+      h+='<tr class="exprow"><td colspan="5"><div class="supgrid">';
+      for(const s of SUPPLIERS){
+        const c=curOf(s); const v=(rec[s]!=null?rec[s]:""); const y=toYen(s,v===""?null:v);
+        const isBest=(mn!=null&&y!=null&&y===mn);
+        const conv=(v==="")?"":(y!=null?"≒¥"+num(y):'<span class="norate">レート未設定</span>');
+        h+='<div class="supcard'+(isBest?' best':'')+'" data-row="'+i+'" data-sup="'+esc(s)+'"><div class="supname">'+esc(s)+' <span class="curtag'+(c==="JPY"?' jpy':'')+'">'+CURR[c].sym+' '+c+'</span></div>';
+        h+='<div class="inrow"><span class="cursym">'+CURR[c].sym+'</span><input class="priceinput" type="number" inputmode="decimal" data-row="'+i+'" data-sup="'+esc(s)+'" value="'+esc(v)+'" placeholder="価格"></div>';
+        h+='<div class="yenconv" data-row="'+i+'" data-sup="'+esc(s)+'">'+conv+'</div></div>';
+      }
+      h+='</div></td></tr>';
+    }
+  }
+  h+='</tbody></table></div></div>';
+  return h;
+}
+function exportPrices(){
+  const payload={ suppliers:SUPPLIERS, supcur:SUPCUR, rates:RATES, prices:PRICES };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="仕入先価格.json"; a.click();
+}
+function importPrices(e){
+  const f=e.target.files[0]; if(!f) return;
+  const r=new FileReader();
+  r.onload=()=>{ try{
+    const obj=JSON.parse(r.result);
+    if(Array.isArray(obj.suppliers)){ for(const s of obj.suppliers) if(!SUPPLIERS.includes(s)) SUPPLIERS.push(s); }
+    if(obj.supcur && typeof obj.supcur==="object") Object.assign(SUPCUR,obj.supcur);
+    if(obj.rates && typeof obj.rates==="object") Object.assign(RATES,obj.rates);
+    if(obj.prices && typeof obj.prices==="object") Object.assign(PRICES,obj.prices);
+    saveSuppliers(); saveSupCur(); saveRates(); savePrices(); render(); setNotice("仕入先価格を取り込みました");
+  }catch(err){ setNotice("取り込み失敗: "+err.message); } };
+  r.readAsText(f); e.target.value="";
+}
+
+function renderPeriod(){
+  const periods=periodsList();
+  let h='<div class="chips">';
+  for(const p of periods) h+=`<button class="chip ${ACTIVE_PERIOD===p.key?'active':''}" data-pk="${p.key}">${p.label} <small>${p.range}</small></button>`;
+  h+='</div>';
+  if(!ACTIVE_PERIOD){ h+='<div class="empty">仕入期を選ぶと、その10日間の発注リストが出ます。</div>'; return h; }
+  const det=buildPeriodDetail(ACTIVE_PERIOD);
+  const totQty=det.reduce((s,r)=>s+r.qty,0);
+  h+='<div class="panel"><div class="bar"><div>仕入対象 <b>'+det.length+'</b> 品目 ／ 合計 <b>'+num(totQty)+'</b> 個</div><button class="btn-o" id="exportBtn">仕入リストをCSV出力</button></div><div class="scroll"><table><thead><tr><th>商品</th><th class="r">仕入数</th><th class="r">参考金額</th><th>発注元クリニック</th></tr></thead><tbody>';
+  for(const it of det){
+    h+='<tr><td><div class="pname">'+esc(it.name)+(it.cat?'<span class="cattag">'+esc(it.cat)+'</span>':'')+'</div><div class="pmeta">'+(it.code?'<span class="code">'+esc(it.code)+'</span>':'')+esc(it.spec)+'</div></td>';
+    h+='<td class="r num bold">'+num(it.qty)+'</td><td class="r num">'+yen(it.amount)+'</td><td>';
+    for(const [c,q] of Object.entries(it.clinics)) h+='<span class="cl">'+esc(c)+'<b>×'+q+'</b></span>';
+    h+='</td></tr>';
+  }
+  h+='</tbody></table></div></div>';
+  return h;
+}
+
+function render(){
+  renderCards();
+  renderTicker();
+  const c=document.getElementById("content");
+  if(VIEW==="period") c.innerHTML=renderPeriod();
+  else if(VIEW==="classify") c.innerHTML=renderClassify();
+  else if(VIEW==="prices") c.innerHTML=renderPrices();
+  else c.innerHTML=renderSummary();
+
+  document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ACTIVE_PERIOD=b.dataset.pk; render();});
+  const ex=document.getElementById("exportBtn"); if(ex) ex.onclick=exportPeriod;
+  document.querySelectorAll(".catinput").forEach(inp=>{
+    inp.onchange=()=>{
+      const k=inp.dataset.key, v=inp.value.trim();
+      if(v){ CATS[k]=v; addCatName(v); } else { delete CATS[k]; }
+      saveCats(); updateCatlist();
+      const chips=document.getElementById("catchips"); if(chips){ chips.innerHTML=catChipsHtml(); bindCatChips(); }
+    };
+  });
+  const addc=document.getElementById("addcat");
+  if(addc){
+    const doAdd=()=>{ const el=document.getElementById("newcat"); addCatName(el.value); el.value=""; render(); };
+    addc.onclick=doAdd;
+    const nc=document.getElementById("newcat");
+    if(nc) nc.onkeydown=(ev)=>{ if(ev.key==="Enter"){ ev.preventDefault(); doAdd(); } };
+  }
+  bindCatChips();
+  const ce=document.getElementById("catExport"); if(ce) ce.onclick=exportCats;
+  const cib=document.getElementById("catImportBtn"); if(cib) cib.onclick=()=>document.getElementById("catImport").click();
+  const ci=document.getElementById("catImport"); if(ci) ci.onchange=importCats;
+  // 仕入先価格
+  const adds=document.getElementById("addsup");
+  if(adds){
+    const doAddS=()=>{ const el=document.getElementById("newsup"); const cur=document.getElementById("newsupcur").value; addSupplier(el.value,cur); el.value=""; render(); };
+    adds.onclick=doAddS;
+    const ns=document.getElementById("newsup"); if(ns) ns.onkeydown=(ev)=>{ if(ev.key==="Enter"){ ev.preventDefault(); doAddS(); } };
+  }
+  bindSupChips();
+  document.querySelectorAll(".rateinput").forEach(inp=>{
+    inp.onchange=()=>{ const c=inp.dataset.cur, v=inp.value.trim(); if(v==="") delete RATES[c]; else RATES[c]=Number(v); saveRates(); render(); };
+  });
+  document.querySelectorAll(".priceinput").forEach(inp=>{
+    inp.onchange=()=>{
+      const i=+inp.dataset.row, sup=inp.dataset.sup, key=PRICE_ROWS[i], v=inp.value.trim();
+      if(!PRICES[key]) PRICES[key]={};
+      if(v==="") delete PRICES[key][sup]; else PRICES[key][sup]=Number(v);
+      savePrices(); refreshPriceRow(i);
+    };
+  });
+  const pf=document.getElementById("pricefilter"); if(pf) pf.onchange=()=>{ PRICE_FILTER=pf.value; render(); };
+  document.querySelectorAll(".prow").forEach(row=>{
+    row.querySelector(".sticky").onclick=()=>{
+      const k=row.dataset.key;
+      if(EXPANDED.has(k)) EXPANDED.delete(k); else EXPANDED.add(k);
+      render();
+    };
+  });
+  const pe=document.getElementById("priceExport"); if(pe) pe.onclick=exportPrices;
+  const pib=document.getElementById("priceImportBtn"); if(pib) pib.onclick=()=>document.getElementById("priceImport").click();
+  const pi=document.getElementById("priceImport"); if(pi) pi.onchange=importPrices;
+  updateCatlist();
+}
+
+function exportPeriod(){
+  if(!ACTIVE_PERIOD) return;
+  const det=buildPeriodDetail(ACTIVE_PERIOD);
+  const p=periodsList().find(x=>x.key===ACTIVE_PERIOD);
+  const rows=[["カテゴリ","品番","商品名","規格","仕入数","参考単価","参考金額"]];
+  for(const it of det) rows.push([it.cat||"未分類",it.code,it.name,it.spec,it.qty, it.amount/(it.qty||1), it.amount]);
+  const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+  const blob=new Blob(["\uFEFF"+csv],{type:"text/csv"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+  a.download="仕入リスト_"+(p?p.label.replace(/[ 　]/g,""):ACTIVE_PERIOD)+".csv"; a.click();
+}
+
+function parseBcartCsv(text){
+  const parsed=Papa.parse(text,{header:true,skipEmptyLines:true});
+  const clean=v=>v==null?"":String(v).replace(/\s+/g," ").trim();
+  const out=[];
+  for(const r of parsed.data){
+    if(clean(r["明細区分"])!=="商品") continue;
+    const name=clean(r["商品名"]);
+    if(/値引|お値引|ポイント/.test(name)) continue;
+    const dt=clean(r["受注日時"]);
+    out.push({date:dt?dt.split(" ")[0]:"",clinic:clean(r["会社名"]),code:clean(r["品番"]),name,
+      spec:clean(r["製品規格"]).slice(0,80),qty:parseInt(r["受注数"],10)||0,price:parseInt(r["単価"],10)||0,
+      orderNo:clean(r["受注番号"]),deliv:clean(r["納品日"]),ship:clean(r["発送状況"]),tracking:clean(r["送り状番号"])});
+  }
+  return out;
+}
+
+function setNotice(msg){ document.getElementById("notice").innerHTML = msg?'<div class="notice">'+esc(msg)+'</div>':''; }
+
+document.getElementById("uploadBtn").onclick=()=>document.getElementById("file").click();
+document.getElementById("file").onchange=e=>{
+  const f=e.target.files[0]; if(!f) return;
+  const reader=new FileReader();
+  reader.onload=async ()=>{
+    try{
+      let text;
+      try{ text=new TextDecoder("shift-jis",{fatal:false}).decode(reader.result); }
+      catch(_){ text=new TextDecoder("utf-8").decode(reader.result); }
+      const recs=parseBcartCsv(text);
+      if(!recs.length){ setNotice("商品明細が見つかりませんでした。Bカートの受注CSVか確認してください。"); return; }
+      const dates=recs.map(r=>r.date).filter(Boolean).sort();
+      const from=dates[0], to=dates[dates.length-1];
+      if(!confirm("受注CSVを取り込みます。\n対象期間 "+from+" 〜 "+to+" の既存データは、このCSVの内容で置き換わります。\n（商品明細 "+recs.length+" 件）\n\nよろしいですか？")) return;
+      setNotice("取り込み中…");
+      await importOrders(recs, from, to);
+      await loadOrders();
+      ACTIVE_PERIOD=null;
+      setNotice(f.name+" を取り込みました（"+from+"〜"+to+" / "+recs.length+" 件）");
+      render();
+    }catch(err){ setNotice("取り込みに失敗しました: "+(err.message||err)); }
+  };
+  reader.readAsArrayBuffer(f); e.target.value="";
+};
+
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  document.querySelectorAll(".tab").forEach(x=>x.classList.remove("active"));
+  t.classList.add("active"); VIEW=t.dataset.view; render();
+});
+
+
+/* ==========================================================
+   Supabase データ層
+   ========================================================== */
+const SB = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+function showSync(on){ const d=document.getElementById("syncdot"); if(d) d.classList.toggle("on", !!on); }
+
+/* ---- 読み込み ---- */
+async function loadOrders(){
+  let all=[], from=0, size=1000;
+  while(true){
+    const { data, error } = await SB.from('orders').select('*').order('order_date').range(from, from+size-1);
+    if(error) throw error;
+    all = all.concat(data);
+    if(data.length < size) break;
+    from += size;
+  }
+  ORDERS = all.map(r=>({
+    date:r.order_date, clinic:r.clinic||"", code:r.code||"", name:r.name||"",
+    spec:r.spec||"", qty:r.qty||0, price:r.price||0, orderNo:r.order_no||""
+  }));
+}
+async function loadMasters(){
+  const [cats, pcats, sups, rates, prices] = await Promise.all([
+    SB.from('categories').select('name'),
+    SB.from('product_categories').select('pkey,category'),
+    SB.from('suppliers').select('name,currency'),
+    SB.from('fx_rates').select('currency,rate'),
+    SB.from('supplier_prices').select('pkey,supplier,price'),
+  ]);
+  for(const r of [cats,pcats,sups,rates,prices]) if(r.error) throw r.error;
+  CATNAMES = cats.data.map(r=>r.name);
+  CATS = {}; for(const r of pcats.data) if(r.category) CATS[r.pkey]=r.category;
+  SUPPLIERS = sups.data.map(r=>r.name);
+  SUPCUR = {}; for(const r of sups.data) SUPCUR[r.name]=r.currency||'JPY';
+  RATES = {}; for(const r of rates.data) RATES[r.currency]=Number(r.rate);
+  PRICES = {};
+  for(const r of prices.data){ if(!PRICES[r.pkey]) PRICES[r.pkey]={}; PRICES[r.pkey][r.supplier]=Number(r.price); }
+}
+
+/* ---- 保存（変更のたびに呼ばれる。まとめて送る） ---- */
+const _pending = new Set();
+let _timer = null;
+function queueSync(what){
+  _pending.add(what);
+  clearTimeout(_timer);
+  _timer = setTimeout(flushSync, 400);
+}
+async function flushSync(){
+  const jobs=[..._pending]; _pending.clear();
+  if(!jobs.length) return;
+  showSync(true);
+  try{
+    for(const j of jobs){
+      if(j==='catnames') await syncCatNames();
+      if(j==='cats')     await syncCats();
+      if(j==='suppliers')await syncSuppliers();
+      if(j==='rates')    await syncRates();
+      if(j==='prices')   await syncPrices();
+    }
+  }catch(err){
+    setNotice("保存に失敗しました: "+(err.message||err));
+  }finally{ showSync(false); }
+}
+async function syncCatNames(){
+  if(CATNAMES.length){
+    const { error } = await SB.from('categories').upsert(CATNAMES.map(n=>({name:n})));
+    if(error) throw error;
+  }
+  const { data, error:e1 } = await SB.from('categories').select('name');
+  if(e1) throw e1;
+  const gone = data.map(r=>r.name).filter(n=>!CATNAMES.includes(n));
+  if(gone.length){ const { error } = await SB.from('categories').delete().in('name', gone); if(error) throw error; }
+}
+async function syncCats(){
+  const rows = Object.entries(CATS).map(([pkey,category])=>({pkey,category,updated_at:new Date().toISOString()}));
+  if(rows.length){ const { error } = await SB.from('product_categories').upsert(rows); if(error) throw error; }
+  const { data, error:e1 } = await SB.from('product_categories').select('pkey');
+  if(e1) throw e1;
+  const gone = data.map(r=>r.pkey).filter(k=>!(k in CATS));
+  if(gone.length){ const { error } = await SB.from('product_categories').delete().in('pkey', gone); if(error) throw error; }
+}
+async function syncSuppliers(){
+  const rows = SUPPLIERS.map((name,i)=>({name, currency:SUPCUR[name]||'JPY', sort:i}));
+  if(rows.length){ const { error } = await SB.from('suppliers').upsert(rows); if(error) throw error; }
+  const { data, error:e1 } = await SB.from('suppliers').select('name');
+  if(e1) throw e1;
+  const gone = data.map(r=>r.name).filter(n=>!SUPPLIERS.includes(n));
+  if(gone.length){ const { error } = await SB.from('suppliers').delete().in('name', gone); if(error) throw error; }
+}
+async function syncRates(){
+  const rows = Object.entries(RATES)
+    .filter(([,rate])=>rate!=null && rate!=="")
+    .map(([currency,rate])=>({currency, rate, updated_at:new Date().toISOString()}));
+  if(rows.length){ const { error } = await SB.from('fx_rates').upsert(rows); if(error) throw error; }
+  const { data, error:e1 } = await SB.from('fx_rates').select('currency');
+  if(e1) throw e1;
+  const gone = data.map(r=>r.currency).filter(c=>!(c in RATES));
+  if(gone.length){ const { error } = await SB.from('fx_rates').delete().in('currency', gone); if(error) throw error; }
+}
+async function syncPrices(){
+  const rows=[]; const live=new Set();
+  for(const [pk,rec] of Object.entries(PRICES))
+    for(const [supplier,price] of Object.entries(rec))
+      if(price!=null && price!==""){ rows.push({pkey:pk, supplier, price, updated_at:new Date().toISOString()}); live.add(pk+'\u0001'+supplier); }
+  if(rows.length){ const { error } = await SB.from('supplier_prices').upsert(rows); if(error) throw error; }
+  const { data, error:e1 } = await SB.from('supplier_prices').select('pkey,supplier');
+  if(e1) throw e1;
+  const gone = data.filter(r=>!live.has(r.pkey+'\u0001'+r.supplier));
+  for(const g of gone){
+    const { error } = await SB.from('supplier_prices').delete().eq('pkey', g.pkey).eq('supplier', g.supplier);
+    if(error) throw error;
+  }
+}
+
+/* ---- CSV取り込み（対象期間を置き換え） ---- */
+async function importOrders(recs, from, to){
+  const { error:delErr } = await SB.from('orders').delete().gte('order_date', from).lte('order_date', to);
+  if(delErr) throw delErr;
+  const rows = recs.filter(r=>r.date).map(r=>({
+    order_no:r.orderNo, order_date:r.date, clinic:r.clinic, code:r.code,
+    name:r.name, spec:r.spec, qty:r.qty, price:r.price, pkey:pkey(r)
+  }));
+  for(let i=0;i<rows.length;i+=500){
+    const { error } = await SB.from('orders').insert(rows.slice(i,i+500));
+    if(error) throw error;
+  }
+}
+
+/* ---- 起動 ---- */
+async function boot(){
+  try{
+    showSync(true);
+    await Promise.all([loadOrders(), loadMasters()]);
+  }catch(err){
+    setNotice("読み込みに失敗しました: "+(err.message||err));
+  }finally{ showSync(false); }
+  render();
+}
+
+boot();
+</script>
+</body>
+</html>
