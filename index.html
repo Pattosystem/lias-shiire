@@ -83,8 +83,21 @@
   @media (max-width:640px){ .cards{ grid-template-columns:repeat(2,1fr);} h1{font-size:22px;} }
 
   /* ===== panels & tables ===== */
+  .catfilters{ display:flex; flex-wrap:wrap; gap:8px; margin-top:18px; }
+  .catf{ padding:10px 18px; font-size:14px; font-weight:700; border:2px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink); cursor:pointer; transition:.12s; }
+  .catf:hover{ border-color:var(--black); }
+  .catf.active{ background:var(--black); color:#fff; border-color:var(--black); }
+  .catf .cnt{ font-weight:900; color:var(--ink2); margin-left:4px; }
+  .catf.active .cnt{ color:var(--yellow); }
   .panel { background:var(--surface); border:1px solid var(--line); border-radius:16px; margin-top:16px; overflow:hidden; }
-  .scroll { overflow-x:auto; }
+  .scroll { overflow:auto; max-height:calc(100vh - 200px); }
+  thead th{ position:sticky; top:0; z-index:6; }
+  thead th.sticky{ z-index:7; }
+  tbody .sticky, tfoot .sticky{ z-index:3; }
+  tr.cathead{ cursor:pointer; }
+  tr.cathead:hover td{ filter:brightness(.97); }
+  tfoot td{ position:sticky; bottom:0; z-index:5; }
+  tfoot td.sticky{ z-index:6; }
   table { width:100%; border-collapse:collapse; font-size:14px; }
   th,td { padding:13px 14px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--line); border-right:1px solid var(--line); }
   th:last-child,td:last-child{ border-right:0; }
@@ -262,6 +275,8 @@ let RATES = {};       // { 通貨コード: 1通貨あたりの円 }（JPYは常
 let PRICE_FILTER = "";
 let PRICE_ROWS = [];
 let EXPANDED = new Set();       // 展開中の商品キー
+let SUM_FILTER = "";            // 仕入サマリーの分類フィルタ（""=全て）
+let COLLAPSED = new Set();      // 折りたたみ中の分類
 function filledCount(key){ const rec=PRICES[key]; if(!rec) return 0; return SUPPLIERS.filter(s=>rec[s]!=null&&rec[s]!=="").length; }
 function bestSupplier(key){
   const rec=PRICES[key]; if(!rec) return null;
@@ -382,40 +397,44 @@ function catOrder(pivot){
 }
 function renderSummary(){
   const periods=periodsList(), pivot=buildPivot();
-  const cats=catOrder(pivot);
+  const allCats=catOrder(pivot);
   const span=periods.length+2;
-  let h='<div class="panel"><div class="scroll"><table><thead><tr>';
+
+  // 分類の絞り込みボタン
+  let h='<div class="catfilters">';
+  const totalAll=pivot.reduce((s,r)=>s+r.total,0);
+  h+='<button class="catf'+(SUM_FILTER===""?' active':'')+'" data-cat="">全て <span class="cnt">'+num(totalAll)+'</span></button>';
+  for(const c of allCats){
+    const rows=pivot.filter(r=>(r.cat||"未分類")===c);
+    const t=rows.reduce((s,r)=>s+r.total,0);
+    h+='<button class="catf'+(SUM_FILTER===c?' active':'')+'" data-cat="'+esc(c)+'">'+esc(c)+' <span class="cnt">'+num(t)+'</span></button>';
+  }
+  h+='</div>';
+
+  const cats = SUM_FILTER ? allCats.filter(c=>c===SUM_FILTER) : allCats;
+
+  h+='<div class="panel"><div class="scroll"><table><thead><tr>';
   h+='<th class="sticky">商品</th>';
   for(const p of periods) h+=`<th class="r"><div>${p.label}</div><div class="pmeta">${p.range}</div></th>`;
   h+='<th class="r">合計</th></tr></thead><tbody>';
   for(const cat of cats){
     const rows=pivot.filter(r=>(r.cat||"未分類")===cat);
-    h+='<tr class="cathead"><td class="sticky" colspan="'+span+'">'+esc(cat)+' <span class="pmeta">('+rows.length+'品目)</span></td></tr>';
+    const folded=COLLAPSED.has(cat);
+    h+='<tr class="cathead" data-cat="'+esc(cat)+'"><td class="sticky">'+(folded?'▸':'▾')+' '+esc(cat)+' <span class="pmeta">('+rows.length+'品目)</span></td>';
+    for(const p of periods) h+='<td class="r num">'+num(rows.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
+    h+='<td class="r num">'+num(rows.reduce((s,r)=>s+r.total,0))+'</td></tr>';
+    if(folded) continue;
     for(const r of rows){
       h+='<tr><td class="sticky"><div class="pname">'+esc(r.name)+'</div><div class="pmeta">'+(r.code?'<span class="code">'+esc(r.code)+'</span>':'')+esc(r.spec)+'</div>'+priceLineHtml(r.key)+'</td>';
       for(const p of periods){ const v=r.byPeriod[p.key]; h+='<td class="r num">'+(v?num(v):'<span class="dim">–</span>')+'</td>'; }
       h+='<td class="r num bold">'+num(r.total)+'</td></tr>';
     }
-    h+='<tr class="subtot"><td class="sticky">小計</td>';
-    for(const p of periods) h+='<td class="r num">'+num(rows.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
-    h+='<td class="r num">'+num(rows.reduce((s,r)=>s+r.total,0))+'</td></tr>';
   }
-  h+='</tbody><tfoot><tr><td class="sticky">総合計 ('+pivot.length+'品目)</td>';
-  for(const p of periods) h+='<td class="r num">'+num(pivot.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
-  h+='<td class="r num">'+num(pivot.reduce((s,r)=>s+r.total,0))+'</td></tr></tfoot></table></div></div>';
+  const shown = SUM_FILTER ? pivot.filter(r=>(r.cat||"未分類")===SUM_FILTER) : pivot;
+  h+='</tbody><tfoot><tr><td class="sticky">'+(SUM_FILTER?esc(SUM_FILTER)+' 合計':'総合計')+' ('+shown.length+'品目)</td>';
+  for(const p of periods) h+='<td class="r num">'+num(shown.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
+  h+='<td class="r num">'+num(shown.reduce((s,r)=>s+r.total,0))+'</td></tr></tfoot></table></div></div>';
   return h;
-}
-function catChipsHtml(){
-  if(CATNAMES.length===0) return '<div class="empty" style="padding:8px 0">まだ分類がありません。上の入力欄で作成してください。</div>';
-  const count={};
-  for(const v of Object.values(CATS)){ count[v]=(count[v]||0)+1; }
-  return CATNAMES.map(n=>'<span class="catchip">'+esc(n)+'<span class="cnt">'+(count[n]||0)+'</span><button class="del" data-cat="'+esc(n)+'" title="この分類を削除">×</button></span>').join("");
-}
-function bindCatChips(){
-  document.querySelectorAll(".catchip .del").forEach(b=>b.onclick=()=>{
-    const name=b.dataset.cat;
-    if(confirm("分類「"+name+"」を削除します。割り当て済みの商品は未分類に戻ります。よろしいですか？")){ removeCatName(name); render(); }
-  });
 }
 function renderClassify(){
   const prods=uniqueProducts().sort((a,b)=>{
@@ -586,6 +605,12 @@ function render(){
   else c.innerHTML=renderSummary();
 
   document.querySelectorAll(".chip").forEach(b=>b.onclick=()=>{ACTIVE_PERIOD=b.dataset.pk; render();});
+  document.querySelectorAll(".catf").forEach(b=>b.onclick=()=>{ SUM_FILTER=b.dataset.cat; render(); });
+  document.querySelectorAll("tr.cathead").forEach(tr=>tr.onclick=()=>{
+    const c=tr.dataset.cat; if(!c) return;
+    if(COLLAPSED.has(c)) COLLAPSED.delete(c); else COLLAPSED.add(c);
+    render();
+  });
   const ex=document.getElementById("exportBtn"); if(ex) ex.onclick=exportPeriod;
   document.querySelectorAll(".catinput").forEach(inp=>{
     inp.onchange=()=>{
