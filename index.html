@@ -180,6 +180,47 @@
 
   #syncdot{ position:fixed; right:16px; bottom:16px; background:var(--black); color:#fff; font-size:12px; font-weight:700; padding:8px 16px; border-radius:999px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:60; }
   #syncdot.on{ opacity:1; }
+
+  /* ===== 画面上では印刷エリアを隠す ===== */
+  #printarea{ display:none; }
+  .btn2{ background:var(--surface); color:var(--black); border:2px solid var(--line); margin-top:8px; }
+  .btn2:hover{ border-color:var(--black); filter:none; }
+
+  /* ===== 印刷（A4／分類ごとに1枚） ===== */
+  @media print{
+    @page { size: A4 portrait; margin: 11mm 10mm; }
+    html,body{ background:#fff !important; }
+    .app, #syncdot, #notice { display:none !important; }
+    #printarea{ display:block; }
+    body{ font-size:10pt; color:#000; }
+
+    .psheet{ page-break-after: always; break-after: page; }
+    .psheet:last-child{ page-break-after: auto; break-after: auto; }
+
+    .phead{ display:flex; justify-content:space-between; align-items:flex-end;
+            border-bottom:2px solid #000; padding-bottom:5px; margin-bottom:8px; }
+    .ptitle{ font-size:15pt; font-weight:900; }
+    .pmetaline{ font-size:8pt; color:#333; margin-top:2px; }
+    .pstamp{ font-size:8pt; text-align:right; color:#333; line-height:1.4; }
+
+    .ptable{ width:100%; border-collapse:collapse; }
+    .ptable th, .ptable td{ border:1px solid #999; padding:3px 5px; vertical-align:middle; }
+    .ptable thead th{ background:#EFEFEF !important; font-size:8.5pt; font-weight:700;
+                      -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .ptable thead{ display:table-header-group; }
+    .ptable tfoot{ display:table-footer-group; }
+    .ptable tfoot td{ background:#EFEFEF !important; font-weight:900; font-size:10pt;
+                      -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+    .ptable tr{ page-break-inside:avoid; }
+
+    .pno{ width:7mm; text-align:center; font-size:8pt; color:#555; }
+    .pn{ font-size:9.5pt; font-weight:700; }
+    .pc{ font-size:7.5pt; border:1px solid #999; padding:0 3px; }
+    .ps{ font-size:7pt; color:#555; margin-top:1px; }
+    .pr{ text-align:right; width:16mm; font-size:11pt; font-variant-numeric:tabular-nums; }
+    .ptot{ font-weight:900; }
+    .pchk{ width:13mm; }
+  }
   .sticky { position:sticky; left:0; background:var(--surface); }
   tbody tr:nth-child(even) .sticky{ background:var(--zebra); }
   .prow:hover .sticky{ background:var(--yellow-pale); }
@@ -206,7 +247,8 @@
       <button class="tab" data-view="prices"><span class="ti">04</span>仕入先価格</button>
     </nav>
     <div class="sideact">
-      <button class="btn" id="uploadBtn">CSV読込</button>
+      <button class="btn" id="printBtn">仕入リストを印刷</button>
+      <button class="btn btn2" id="uploadBtn">CSV読込</button>
       <input type="file" id="file" accept=".csv" style="display:none">
     </div>
     <div class="sidenote">仕入期＝受注日ベースで上旬(1〜10日)・中旬(11〜20日)・下旬(21日〜末)に区分。送料・値引き行は自動除外。</div>
@@ -227,6 +269,7 @@
     <div class="foot">金額は受注単価ベースの参考値です。分類名は「商品分類」で自由に作成でき、割り当ては品番＋商品名＋規格で紐づくのでCSVを入れ替えても維持されます。バックアップは各画面の「書き出し」から。</div>
   </main>
 </div>
+<div id="printarea"></div>
 <div id="syncdot">保存中…</div>
 
 <script>
@@ -324,7 +367,7 @@ function getPeriod(dateStr){
   const jun = d<=10?"上旬":d<=20?"中旬":"下旬";
   const rs = d<=10?1:d<=20?11:21;
   const re = d<=10?10:d<=20?20:new Date(y,m,0).getDate();
-  return { key:y+"-"+String(m).padStart(2,"0")+"-"+jun, sort:y*10000+m*100+rs, label:y+"年"+m+"月 "+jun, range:m+"/"+rs+"〜"+m+"/"+re };
+  return { key:y+"-"+String(m).padStart(2,"0")+"-"+jun, sort:y*10000+m*100+rs, label:y+"年"+m+"月 "+jun, range:m+"/"+rs+"〜"+m+"/"+re, jun:jun, short:m+"月"+jun };
 }
 
 function periodsList(){
@@ -864,6 +907,45 @@ async function boot(){
   }finally{ showSync(false); }
   render();
 }
+
+
+/* ---- 印刷用（分類ごとにA4 1枚） ---- */
+function buildPrintHtml(){
+  const periods=periodsList(), pivot=buildPivot();
+  const allCats=catOrder(pivot);
+  const cats = SUM_FILTER ? allCats.filter(c=>c===SUM_FILTER) : allCats;
+  const today=new Date();
+  const stamp=today.getFullYear()+"/"+(today.getMonth()+1)+"/"+today.getDate();
+  let h='';
+  for(const cat of cats){
+    const rows=pivot.filter(r=>(r.cat||"未分類")===cat);
+    if(!rows.length) continue;
+    h+='<section class="psheet">';
+    h+='<div class="phead"><div><div class="ptitle">仕入リスト／'+esc(cat)+'</div>';
+    h+='<div class="pmetaline">'+periods.map(p=>esc(p.label)+'（'+p.range+'）').join('　')+'</div></div>';
+    h+='<div class="pstamp">LIAS 仕入管理<br>出力 '+stamp+'</div></div>';
+    h+='<table class="ptable"><thead><tr><th class="pno">No.</th><th>商品</th>';
+    for(const p of periods) h+='<th class="pr">'+esc(p.short||p.jun)+'<div style="font-size:7pt;font-weight:400">'+esc(p.range)+'</div></th>';
+    h+='<th class="pr">合計</th><th class="pchk">確認</th></tr></thead><tbody>';
+    let n=0;
+    for(const r of rows){
+      n++;
+      h+='<tr><td class="pno">'+n+'</td><td><span class="pn">'+esc(r.name)+'</span>'+(r.code?' <span class="pc">'+esc(r.code)+'</span>':'')+'<div class="ps">'+esc((r.spec||'').slice(0,42))+'</div></td>';
+      for(const p of periods){ const v=r.byPeriod[p.key]; h+='<td class="pr">'+(v?num(v):'')+'</td>'; }
+      h+='<td class="pr ptot">'+num(r.total)+'</td><td class="pchk"></td></tr>';
+    }
+    h+='</tbody><tfoot><tr><td></td><td>小計（'+rows.length+'品目）</td>';
+    for(const p of periods) h+='<td class="pr">'+num(rows.reduce((s,r)=>s+(r.byPeriod[p.key]||0),0))+'</td>';
+    h+='<td class="pr ptot">'+num(rows.reduce((s,r)=>s+r.total,0))+'</td><td></td></tr></tfoot></table>';
+    h+='</section>';
+  }
+  return h || '<section class="psheet"><div class="ptitle">印刷できる商品がありません</div></section>';
+}
+const _pb=document.getElementById("printBtn");
+if(_pb) _pb.onclick=()=>{
+  document.getElementById("printarea").innerHTML = buildPrintHtml();
+  window.print();
+};
 
 boot();
 </script>
