@@ -59,7 +59,7 @@
   }
 
   /* ===== topbar ===== */
-  .topbar{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:22px; }
+  .topbar{ display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-start; gap:18px; margin-bottom:4px; }
   h1 { font-size:27px; line-height:1.3; font-weight:900; color:var(--black); letter-spacing:-.01em; }
   h1 .slash{ color:var(--yellow); }
   .sub { font-size:13px; color:var(--ink2); max-width:56ch; font-weight:500; margin-top:3px; }
@@ -263,14 +263,9 @@
 
   <main class="main">
     <header class="topbar">
-      <div>
-        <h1>10日ごと<span class="slash">／</span>仕入インデックス</h1>
-        <div class="sub">受注を自動仕分けし、仕入れが必要な個数と仕入先価格を円換算で確認します。</div>
-      </div>
       <div id="ticker"></div>
     </header>
     <div id="notice"></div>
-    <div class="cards" id="cards"></div>
     <datalist id="catlist"></datalist>
     <div id="content"></div>
     <div class="foot">金額は受注単価ベースの参考値です。分類名は「商品分類」で自由に作成でき、割り当ては品番＋商品名＋規格で紐づくのでCSVを入れ替えても維持されます。バックアップは各画面の「書き出し」から。</div>
@@ -423,6 +418,7 @@ function renderTicker(){
   el.innerHTML=h;
 }
 function renderCards(){
+  const _c=document.getElementById("cards"); if(!_c) return;
   const totQty = ORDERS.reduce((s,o)=>s+o.qty,0);
   const items = buildPivot().length;
   const clinics = new Set(ORDERS.map(o=>o.clinic)).size;
@@ -434,7 +430,7 @@ function renderCards(){
     {l:"商品明細",v:num(ORDERS.length)+" 件"},
     {l:"取引クリニック",v:num(clinics)+" 院"},
   ];
-  document.getElementById("cards").innerHTML = cards.map(c=>
+  _c.innerHTML = cards.map(c=>
     `<div class="card"><div class="l">${c.l}</div><div class="v">${c.v}</div></div>`).join("");
 }
 
