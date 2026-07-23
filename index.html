@@ -102,7 +102,7 @@
   th,td { padding:13px 14px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--line); border-right:1px solid var(--line); }
   th:last-child,td:last-child{ border-right:0; }
   thead tr { background:var(--yellow); }
-  thead th{ font-size:12.5px; color:var(--black); font-weight:900; border-color:rgba(0,0,0,.12); text-align:center; }
+  thead th{ background:var(--yellow); font-size:12.5px; color:var(--black); font-weight:900; border-color:rgba(0,0,0,.12); text-align:center; }
   thead th.sticky{ text-align:left; }
   th.r,td.r { text-align:right; }
   tbody tr:nth-child(even) { background:var(--zebra); }
@@ -115,7 +115,7 @@
   .dim { color:var(--faint); font-weight:400; }
   .bold { font-weight:900; }
   tfoot tr { background:var(--black); }
-  tfoot td{ color:#fff; font-size:15px; font-weight:900; border-color:rgba(255,255,255,.15); }
+  tfoot td{ background:var(--black); color:#fff; font-size:15px; font-weight:900; border-color:rgba(255,255,255,.15); }
 
   .bar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 18px; background:var(--zebra); border-bottom:1px solid var(--line); font-size:13px; color:var(--ink2); font-weight:500; }
   .bar.amber { background:var(--yellow-pale); color:#7A5A00; }
@@ -175,6 +175,7 @@
   .catchip .del { border:none; background:#F4F4F6; color:var(--ink2); width:24px; height:24px; border-radius:999px; cursor:pointer; font-size:15px; line-height:1; transition:.12s; }
   .catchip .del:hover { background:var(--rust); color:#fff; }
   .cathead td { background:var(--yellow-soft); color:var(--black); font-weight:900; font-size:14px; }
+  tbody tr td{ background-clip:padding-box; }
   .subtot td { background:#F4F4F6; color:var(--black); font-weight:900; }
   .cattag { display:inline-block; border-radius:5px; background:var(--yellow-soft); color:var(--black); font-size:11px; padding:2px 9px; margin-left:6px; vertical-align:middle; font-weight:700; }
 
@@ -393,8 +394,8 @@ function buildPeriodDetail(pk){
   const prod = new Map();
   for(const o of items){
     const key=pkey(o);
-    if(!prod.has(key)) prod.set(key,{code:o.code,name:o.name,spec:o.spec,cat:CATS[key]||"",qty:0,amount:0,clinics:{}});
-    const r=prod.get(key); r.qty+=o.qty; r.amount+=o.qty*o.price; r.clinics[o.clinic]=(r.clinics[o.clinic]||0)+o.qty;
+    if(!prod.has(key)) prod.set(key,{code:o.code,name:o.name,spec:o.spec,cat:CATS[key]||"",price:o.price,qty:0,amount:0,clinics:{}});
+    const r=prod.get(key); r.qty+=o.qty; r.amount+=o.qty*o.price; r.price=o.price; r.clinics[o.clinic]=(r.clinics[o.clinic]||0)+o.qty;
   }
   return [...prod.values()].sort((a,b)=>b.qty-a.qty);
 }
@@ -627,10 +628,10 @@ function renderPeriod(){
   if(!ACTIVE_PERIOD){ h+='<div class="empty">仕入期を選ぶと、その10日間の発注リストが出ます。</div>'; return h; }
   const det=buildPeriodDetail(ACTIVE_PERIOD);
   const totQty=det.reduce((s,r)=>s+r.qty,0);
-  h+='<div class="panel"><div class="bar"><div>仕入対象 <b>'+det.length+'</b> 品目 ／ 合計 <b>'+num(totQty)+'</b> 個</div><button class="btn-o" id="exportBtn">仕入リストをCSV出力</button></div><div class="scroll"><table><thead><tr><th>商品</th><th class="r">仕入数</th><th class="r">参考金額</th><th>発注元クリニック</th></tr></thead><tbody>';
+  h+='<div class="panel"><div class="bar"><div>仕入対象 <b>'+det.length+'</b> 品目 ／ 合計 <b>'+num(totQty)+'</b> 個</div><button class="btn-o" id="exportBtn">仕入リストをCSV出力</button></div><div class="scroll"><table><thead><tr><th>商品</th><th class="r">仕入数</th><th class="r">単価</th><th>発注元クリニック</th></tr></thead><tbody>';
   for(const it of det){
     h+='<tr><td><div class="pname">'+esc(it.name)+(it.cat?'<span class="cattag">'+esc(it.cat)+'</span>':'')+'</div><div class="pmeta">'+(it.code?'<span class="code">'+esc(it.code)+'</span>':'')+esc(it.spec)+'</div></td>';
-    h+='<td class="r num bold">'+num(it.qty)+'</td><td class="r num">'+yen(it.amount)+'</td><td>';
+    h+='<td class="r num bold">'+num(it.qty)+'</td><td class="r num">'+yen(it.price)+'</td><td>';
     for(const [c,q] of Object.entries(it.clinics)) h+='<span class="cl">'+esc(c)+'<b>×'+q+'</b></span>';
     h+='</td></tr>';
   }
@@ -711,8 +712,8 @@ function exportPeriod(){
   if(!ACTIVE_PERIOD) return;
   const det=buildPeriodDetail(ACTIVE_PERIOD);
   const p=periodsList().find(x=>x.key===ACTIVE_PERIOD);
-  const rows=[["カテゴリ","品番","商品名","規格","仕入数","参考単価","参考金額"]];
-  for(const it of det) rows.push([it.cat||"未分類",it.code,it.name,it.spec,it.qty, it.amount/(it.qty||1), it.amount]);
+  const rows=[["カテゴリ","品番","商品名","規格","仕入数","単価"]];
+  for(const it of det) rows.push([it.cat||"未分類",it.code,it.name,it.spec,it.qty, it.price]);
   const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
   const blob=new Blob(["\uFEFF"+csv],{type:"text/csv"});
   const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
