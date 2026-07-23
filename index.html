@@ -486,6 +486,18 @@ function renderSummary(){
   h+='<td class="r num">'+num(shown.reduce((s,r)=>s+r.total,0))+'</td></tr></tfoot></table></div></div>';
   return h;
 }
+function catChipsHtml(){
+  if(CATNAMES.length===0) return '<div class="empty" style="padding:8px 0">まだ分類がありません。上の入力欄で作成してください。</div>';
+  const count={};
+  for(const v of Object.values(CATS)){ count[v]=(count[v]||0)+1; }
+  return CATNAMES.map(n=>'<span class="catchip">'+esc(n)+'<span class="cnt">'+(count[n]||0)+'</span><button class="del" data-cat="'+esc(n)+'" title="この分類を削除">×</button></span>').join("");
+}
+function bindCatChips(){
+  document.querySelectorAll(".catchip .del[data-cat]").forEach(b=>b.onclick=()=>{
+    const name=b.dataset.cat;
+    if(confirm("分類「"+name+"」を削除します。割り当て済みの商品は未分類に戻ります。よろしいですか？")){ removeCatName(name); render(); }
+  });
+}
 function renderClassify(){
   const prods=uniqueProducts().sort((a,b)=>{
     const ca=CATS[a.key]||"~", cb=CATS[b.key]||"~";
